@@ -34,10 +34,18 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // No "X-Powered-By: Next.js": it tells a scanner which advisories to try.
+  poweredByHeader: false,
+  /* No images.remotePatterns: nothing renders next/image, and the old
+     `hostname: '**'` let anyone use /_next/image to fetch and resize pictures
+     from any host through this server. A remote image source added later
+     should be listed by exact host.
+     `unoptimized` goes one step further and switches the optimizer off, so
+     /_next/image answers 404 before it fetches or decodes anything. Nothing
+     here needs resized images, and the optimizer is where most of Next's
+     recent advisories have been. */
   images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-    ],
+    unoptimized: true,
   },
   async headers() {
     return [
@@ -59,6 +67,15 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
+      /* The built-in place list (lib/places.ts): over a megabyte, and it only
+         changes when tools/build-places.mjs is run again, so a browser keeps
+         it for a day rather than asking again on every page load. */
+      {
+        source: '/places.json',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
+        ],
+      },
       {
         source: '/(.*)',
         headers: [
@@ -67,6 +84,12 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'X-XSS-Protection', value: '1; mode=block' },
+          // Other sites learn the origin a visitor came from, not the view they were on.
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          /* Location (directions, "near me") and the microphone (OI voice)
+             are used by OSIRIS itself and by nothing it embeds; the rest it
+             never asks for, so no page or embed can. */
+          { key: 'Permissions-Policy', value: 'geolocation=(self), microphone=(self), camera=(), payment=(), usb=(), display-capture=()' },
         ],
       },
     ];

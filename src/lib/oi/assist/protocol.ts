@@ -17,7 +17,7 @@
 import { extractJson } from '../parse';
 import { FIND_LAYERS, LAYERS, PANELS, SOURCES } from './catalog';
 
-export const TOOL_NAMES = ['go_to', 'layers', 'find', 'scan', 'camera', 'highlight', 'show', 'markets', 'open', 'map_view', 'forecast', 'workspace', 'select', 'clear'] as const;
+export const TOOL_NAMES = ['go_to', 'layers', 'find', 'scan', 'camera', 'highlight', 'show', 'markets', 'open', 'map_view', 'recon', 'forecast', 'workspace', 'select', 'terrain', 'clear'] as const;
 export type ToolName = typeof TOOL_NAMES[number];
 
 /** What the reader asked OI to concentrate on. Auto lets the model choose. */
@@ -94,6 +94,9 @@ open {panel}
 map_view {projection?: "globe"|"flat", style?: "dark"|"satellite"}
   Switch between the 3D globe and the flat map, and the night or satellite basemap.
 
+recon {tool: string, target?: string}
+  Run one OSINT lookup from the Recon panel and get the result back. tool is one of: self_track (the reader's own public-IP location — no target), shodan (Shodan InternetDB record for an IP: open ports, known CVEs, device tags), dns / whois / certs / ssl / subdomains / headers / tech (a domain or URL), bgp (an IP or ASN), mac (a MAC address), phone (a phone number), username (a handle, hunted across platforms), github (a GitHub user), threats (reputation of an IP, domain or hash), leaks (breach exposure for an email), crypto (a wallet address), vuln (CVEs for a host). target is the thing to look up (omit for self_track). Where the result can be placed, it is pinned on the map. Results come back to you.
+
 forecast {question, depth?: "quick"|"standard"|"deep"}
   Start an OI prediction: OI researches the question, casts the actors who decide it, and plays them against each other over dated periods to the horizon in several parallel simulated worlds, then writes the predicted path, what each actor does, and a calibrated figure (a probability, shares per outcome, or an estimate with a range). It makes 30 to 130 model calls on the reader's key, so only when they ask for a forecast, prediction or odds, or chose Forecast mode. Phrase the question so it resolves by a date.
 
@@ -102,6 +105,17 @@ workspace {open?: boolean, view?: "globe"|"graph"|"timeline"|"table"}
 
 select {name}
   Open an object of the current forecast by name: an actor, a simulated world ("World A"), an event, a source, a scenario or a signpost (see the forecast's objects in CONTEXT). It opens in the object view and lights up on the globe and in the graph.
+
+terrain {do: "relief"|"profile"|"field"|"coverage"|"rain3d"|"cutout"|"clear", …}
+  USGS 3DEP lidar — bare-earth elevation at 1 m wherever a lidar flight exists in the United States — through the ArcGIS panel's terrain tools. Results come back to you, in feet, acres and cubic yards.
+    relief {mode?: "hillshade"|"tinted"|"color"|"slope"|"contour2"|"contour5", opacity?: 0-1, off?: true}: shade the map with lidar relief (visible from about zoom 8 in).
+    profile {from: place | {lat, lng}, to: place | {lat, lng}} or {points: [{lat, lng}, …]}: elevation along a line — length, start and end, low, high, climb, drop, overall grade. Drawn on the map with a chart in the panel.
+    field {points: [{lat, lng}, … at least 3 corners]} or {near: place | {lat, lng}, size_m?: 50-3000}, analysis?: "elevation"|"drainage"|"cutfill", ratio?: target cut:fill (default 1.2): download the lidar for an area (up to 3,000 acres) and analyse it. elevation: acres, low, high, relief. drainage: where water leaves the field (outlets, each with the acres draining to it) and where it stands after rain (acres, cubic yards). cutfill: grade it to a best-fit plane — cut and fill in cubic yards, cut per acre, max cut and fill, slope and the heading water runs. Drawn on the map on satellite imagery. Takes 10 to 60 seconds.
+    coverage {near: place | {lat, lng}}: whether lidar covers a place, which project, when it was flown and its quality level.
+    rain3d {}: open the analysed field in 3D on its own screen and run a 2 in/hr, one-hour storm over it.
+    cutout {near: place | {lat, lng}, size_m?: 100-50000 (default 2000)} or {points: [{lat, lng}, … two or more corners]}: lift a box of the map out into its own browser tab, in 3D (satellite imagery on lidar in the US, 30 m terrain elsewhere), with the CCTV cameras and network C2 hosts inside it. water?: "rain" (opens with a storm running over the ground, to see where water runs and pools) | "flow" (the paths water takes downhill and where it stands) | "flood" (a water level to raise). Works anywhere in the world. Gives back the link.
+    clear {}: remove the field, profile and relief.
+  Use it for elevation, slope, drainage, flooding of a field or site, earthwork, land levelling and "how high/low is…" questions in the US.
 
 clear {}
   Remove your highlights from the map.`;
@@ -125,6 +139,7 @@ Rules:
 - When asked to go somewhere or to see something, act: go_to, and the layers or find that show it. Prefer one step that does everything.
 - Use find with show (the default) to mark what you found; use show to list it in the conversation when the reader wants the details; use highlight for places you know that are not in the live data.
 - After RESULTS, answer from them in a sentence or two, mention the most relevant items by name, and finish with done:true. If nothing matched, say so plainly and suggest what else to try.
+- For an OSINT lookup — an IP, domain, host, username, phone, email breach, crypto wallet, MAC or ASN — or the reader's own location ("where am I", "track me"), use recon with the matching tool and done:false, then answer from the RESULTS.
 - General questions that need no map or live data: answer directly with no actions.
 - Keep within the reader's MODE: navigate means move the map and switch layers; research means gather live data and present it; forecast means start a forecast for their question (one forecast tool call, then done). auto means choose.
 - Coordinates are decimal degrees: lat −90..90, lng −180..180.

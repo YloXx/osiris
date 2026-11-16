@@ -7,6 +7,7 @@ import {
   LocateFixed, Crosshair, Clock, Plus, Trash2, SlidersHorizontal, Mountain, Navigation, Play,
   AlertTriangle, Loader2, type LucideIcon,
 } from 'lucide-react';
+import { searchPlaces, type GeoResult } from '@/lib/geosearch';
 import { loadRecent, rememberPlace, type RecentPlace } from '@/lib/recent-places';
 import { PlaceRow } from './places';
 
@@ -43,19 +44,19 @@ export interface RouteResult {
   descent?: number;
 }
 
+/** What a route was planned with, besides its ends: the travel mode is on the route itself. */
+export interface TripPlan {
+  /** Intermediate stops, in order. */
+  stops: { lat: number; lng: number }[];
+  /** Any of 'tolls', 'highways', 'ferries'. */
+  avoid: string[];
+}
+
 export interface LiveLocation {
   lat: number;
   lng: number;
   accuracy?: number;
   heading?: number | null;
-}
-
-interface GeoHit {
-  name: string;
-  context: string;
-  lat: number;
-  lng: number;
-  kind: string;
 }
 
 interface Place {
@@ -84,8 +85,11 @@ interface DirectionsBarProps {
   /** Selected step segment, for highlighting the leg on the map. */
   onActiveSegment?: (seg: [number, number][] | null) => void;
   onFollowChange?: (follow: boolean) => void;
-  /** Hand the chosen route to the parent to drive live navigation. */
-  onStartNavigation?: (route: RouteResult, destinationLabel: string) => void;
+  /**
+   * Hand the chosen route to the parent to drive live navigation, with the
+   * plan behind it, so a re-plan on the way keeps the same stops and options.
+   */
+  onStartNavigation?: (route: RouteResult, destinationLabel: string, plan: TripPlan) => void;
   /** A destination to open with, handed over from Search ("Directions to here"). */
   initialTo?: Place | null;
 }
@@ -340,19 +344,17 @@ function PlaceInput({
       abort.current = ctrl;
 
       setLoading(true);
-      try {
-        const bias = biasLat !== undefined && biasLng !== undefined
-          ? `&lat=${biasLat}&lng=${biasLng}` : '';
-        const res = await fetch(
-          `/api/geosearch?q=${encodeURIComponent(q)}${bias}`,
-          { signal: ctrl.signal },
-        );
-        const data: { results?: GeoHit[] } = await res.json();
-        if (ctrl.signal.aborted) return;
-        setResults((data.results || []).map((r) => ({
+      const show = (found: GeoResult[]) => {
+        setResults(found.map((r) => ({
           label: r.name, context: r.context, lat: r.lat, lng: r.lng, kind: r.kind,
         })));
         setOpen(true);
+      };
+      try {
+        const near = biasLat !== undefined && biasLng !== undefined ? { lat: biasLat, lng: biasLng } : null;
+        const found = await searchPlaces(q, near, ctrl.signal, show);
+        if (ctrl.signal.aborted) return;
+        show(found);
       } catch {
         if (!ctrl.signal.aborted) setResults([]);
       }
@@ -899,7 +901,10 @@ export default function DirectionsBar({ onRoute, onLocate, onClose, center = nul
               </div>
 
               {onStartNavigation && (
-                <button onClick={() => onStartNavigation(route, to?.label || 'your destination')} className="tool-btn-primary w-full mt-3">
+                <button onClick={() => onStartNavigation(route, to?.label || 'your destination', {
+                  stops: stops().map(({ lat, lng }) => ({ lat, lng })),
+                  avoid: Object.entries(avoid).filter(([, on]) => on).map(([k]) => k),
+                })} className="tool-btn-primary w-full mt-3">
                   <Play className="w-4 h-4" fill="currentColor" /> Start navigation
                 </button>
               )}
